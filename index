@@ -1,0 +1,490 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grammar Mole Rush</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;font-family:Arial,sans-serif;
+ background:linear-gradient(#b9eaff,#e4f9d2);
+ color:#24334b;text-align:center
+}
+header{padding:18px 10px}
+h1{margin:0;color:#a14d23;font-size:clamp(26px,5vw,43px)}
+.subtitle{margin:8px;color:#506276}
+.panel{
+ max-width:920px;margin:10px auto;padding:15px;
+ background:#ffffffdd;border-radius:20px;
+ box-shadow:0 5px 18px #0002
+}
+.controls{
+ display:flex;justify-content:center;gap:10px;
+ flex-wrap:wrap;align-items:center
+}
+button,select{
+ border:0;border-radius:12px;padding:12px 17px;
+ font-size:16px;font-weight:bold;cursor:pointer
+}
+button{background:#ffbb38;color:#513313}
+button:hover{filter:brightness(1.05)}
+button:disabled{opacity:.55;cursor:default}
+select{background:#e8f1ff}
+.stats{
+ display:flex;justify-content:space-around;
+ flex-wrap:wrap;gap:12px;font-weight:bold
+}
+.stat{font-size:22px}
+.stat small{display:block;font-size:12px;color:#607086}
+#question{
+ font-size:clamp(22px,4vw,34px);
+ font-weight:bold;min-height:65px;
+ display:flex;align-items:center;justify-content:center
+}
+#bar{
+ height:15px;background:#e6e8ef;
+ border-radius:20px;overflow:hidden
+}
+#progress{
+ height:100%;width:100%;
+ background:#49bc75;transition:width .1s linear
+}
+#field{
+ max-width:920px;margin:auto;
+ background:linear-gradient(#83d96c 0%,#60bd53 65%,#aa743f 65%);
+ border:6px solid #5da64e;border-radius:25px;
+ padding:28px 12px 20px;
+ display:grid;grid-template-columns:repeat(3,1fr);
+ gap:15px 8px;min-height:360px
+}
+.hole{
+ position:relative;height:155px;
+ display:flex;align-items:flex-end;
+ justify-content:center;overflow:hidden
+}
+.pit{
+ position:absolute;bottom:2px;width:94%;height:45px;
+ border-radius:50%;background:#472619;
+ box-shadow:inset 0 8px 8px #241008;
+ z-index:1
+}
+.mole{
+ position:absolute;bottom:-135px;
+ width:94%;max-width:205px;height:145px;
+ border-radius:70px 70px 25px 25px;
+ background:#ad754f;border:4px solid #784629;
+ transition:bottom .3s ease;
+ z-index:2;cursor:pointer;
+ display:flex;flex-direction:column;
+ align-items:center;justify-content:flex-start;
+ padding-top:12px;user-select:none
+}
+.mole.up{bottom:13px}
+.ears{
+ position:absolute;top:0;width:100%;
+ font-size:34px;pointer-events:none
+}
+.face{font-size:38px;line-height:42px;z-index:1}
+.board{
+ background:#fff4b9;border:3px solid #8b5927;
+ border-radius:10px;padding:7px 3px;
+ font-size:clamp(13px,2vw,19px);
+ font-weight:bold;width:95%;min-height:42px;
+ display:flex;align-items:center;justify-content:center;
+ overflow-wrap:anywhere;z-index:3
+}
+.mole.hit{background:#f3b44c;transform:scale(.93)}
+#message{font-size:21px;font-weight:bold;min-height:30px}
+footer{padding:15px;color:#617080;font-size:13px}
+@media(max-width:600px){
+ #field{gap:8px 3px;padding:12px 5px}
+ .hole{height:125px}
+ .mole{height:115px;bottom:-115px;padding-top:6px}
+ .mole.up{bottom:10px}
+ .face{font-size:29px;line-height:33px}
+ .board{font-size:12px;padding:5px 2px;min-height:37px}
+ .pit{height:30px}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>🐹 Grammar Mole Rush 🔨</h1>
+<p class="subtitle">Whack the mole with the correct answer!</p>
+</header>
+
+<div class="panel controls">
+<label>Difficulty:
+<select id="difficulty">
+<option value="easy">Easy – 15 seconds</option>
+<option value="normal">Normal – 10 seconds</option>
+<option value="hard">Hard – 6 seconds</option>
+</select></label>
+<button id="startBtn">▶ START GAME</button>
+<button id="musicBtn">🎵 Music ON</button>
+<button id="soundBtn">🔊 Sound ON</button>
+</div>
+
+<div class="panel stats">
+<div class="stat"><small>SCORE</small><span id="score">0</span></div>
+<div class="stat"><small>ROUND TIME</small><span id="totalTime">05:00</span></div>
+<div class="stat"><small>QUESTION TIME</small><span id="questionTime">15.0</span>s</div>
+<div class="stat"><small>CORRECT</small><span id="correct">0</span></div>
+<div class="stat"><small>WRONG / MISSED</small><span id="wrong">0</span></div>
+</div>
+
+<div class="panel">
+<div id="question">Choose a difficulty and press START!</div>
+<div id="bar"><div id="progress"></div></div>
+</div>
+
+<div id="field"></div>
+<div class="panel"><div id="message">Ready to play?</div></div>
+<footer>Present Simple Grammar • A1 • Classroom Game</footer>
+
+<script>
+"use strict";
+
+const $=id=>document.getElementById(id);
+const field=$("field");
+const holes=[];
+const durations={easy:15,normal:10,hard:6};
+let running=false,score=0,correct=0,wrong=0;
+let remaining=300,questionRemaining=15;
+let question=null,queue=[],timer=null;
+let lastTick=0,transitioning=false;
+let audio=null,musicTimer=null;
+let musicOn=true,soundOn=true,musicStep=0;
+
+function shuffle(a){
+ const b=[...a];
+ for(let i=b.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));
+  [b[i],b[j]]=[b[j],b[i]];
+ }
+ return b;
+}
+
+function add(q,a,wrongAnswers,type){
+ const options=shuffle([...new Set([a,...wrongAnswers])]);
+ if(options.length!==6)return;
+ bank.push({q,a,options,type});
+}
+const bank=[];
+
+const subjects=[
+ ["I","I","am","am","do","don't","play","play"],
+ ["you","you","are","are","do","don't","play","play"],
+ ["he","he","is","is","does","doesn't","plays","play"],
+ ["she","she","is","is","does","doesn't","plays","play"],
+ ["we","we","are","are","do","don't","play","play"],
+ ["they","they","are","are","do","don't","play","play"],
+ ["his brother","his brother","is","is","does","doesn't","plays","play"],
+ ["my friends","my friends","are","are","do","don't","play","play"],
+ ["her sister","her sister","is","is","does","doesn't","plays","play"],
+ ["our teachers","our teachers","are","are","do","don't","play","play"],
+ ["Tom and Anna","Tom and Anna","are","are","do","don't","play","play"],
+ ["my father","my father","is","is","does","doesn't","plays","play"],
+ ["the children","the children","are","are","do","don't","play","play"],
+ ["your mother","your mother","is","is","does","doesn't","plays","play"],
+ ["the students","the students","are","are","do","don't","play","play"],
+ ["my best friend","my best friend","is","is","does","doesn't","plays","play"],
+ ["the dog","the dog","is","is","does","doesn't","plays","play"],
+ ["the cats","the cats","are","are","do","don't","play","play"],
+ ["my sister and I","my sister and I","are","are","do","don't","play","play"],
+ ["his classmates","his classmates","are","are","do","don't","play","play"]
+];
+
+const verbs=[
+ ["play","plays","football every Sunday"],
+ ["watch","watches","TV every evening"],
+ ["study","studies","English every day"],
+ ["go","goes","to school every morning"],
+ ["wash","washes","the dishes after dinner"],
+ ["read","reads","books at night"],
+ ["eat","eats","breakfast at seven"],
+ ["drink","drinks","water every day"],
+ ["like","likes","chocolate"],
+ ["teach","teaches","English at school"],
+ ["fix","fixes","bikes on weekends"],
+ ["carry","carries","a bag to school"],
+ ["try","tries","new food"],
+ ["brush","brushes","their teeth every day"],
+ ["work","works","on Mondays"]
+];
+
+const verbDistractors=["play","plays","playing","is","do","does",
+ "watch","watches","study","studies","go","goes",
+ "wash","washes","read","reads","eat","eats",
+ "drink","drinks","like","likes","teach","teaches",
+ "fix","fixes","carry","carries","try","tries",
+ "brush","brushes","work","works","are","am"];
+
+function six(correct,pool){
+ const others=shuffle([...new Set(pool.filter(x=>x!==correct))]);
+ return others.slice(0,5);
+}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function isSingular(s){return ["he","she","his brother","her sister",
+ "my father","your mother","my best friend","the dog"].includes(s);}
+function objectPhrase(phrase){
+ return phrase.replace("their teeth","his or her teeth");
+}
+
+// Generate a large bank of affirmative, negative and question forms.
+for(const row of subjects){
+ const s=row[0],be=row[2],aux=row[4],neg=row[5];
+ add(cap(s)+" ___ happy.",be,
+  six(be,["am","is","are","do","does","don't","doesn't"]),"affirmative");
+ add(cap(s)+" ___ not tired.",be,
+  six(be,["am","is","are","do","does","don't","doesn't"]),"negative");
+ add("___ "+s+" ready?",cap(be),
+  six(cap(be),["Am","Is","Are","Do","Does","Don't","Doesn't"]),"question");
+
+ for(const v of verbs){
+  const base=v[0],third=v[1],phrase=v[2];
+  const chosen=isSingular(s)?third:base;
+  add(cap(s)+" ___ "+phrase+".",chosen,
+   six(chosen,[base,third,base+"ing","is","are","do","does","am"]),"affirmative");
+  add(cap(s)+" ___ "+base+" "+phrase+".",neg,
+   six(neg,["don't","doesn't","isn't","aren't","is","are","do","does"]),"negative");
+  add("___ "+s+" "+base+" "+phrase+"?",cap(aux),
+   six(cap(aux),["Do","Does","Am","Is","Are","Don't","Doesn't"]),"question");
+ }
+}
+
+// Additional examples with noun phrases.
+const extra=[
+ ["My friends ___ in the classroom.","are",["am","is","do","does","be"]],
+ ["His brother ___ a new bike.","has",["have","having","is","do","does"]],
+ ["The children ___ in the park.","play",["plays","playing","is","does","are"]],
+ ["My mother ___ coffee.","doesn't drink",["don't drink","doesn't drinks","isn't drink","don't drinks","not drink"]],
+ ["___ your parents work on Sundays?","Do",["Does","Is","Are","Am","Don't"]],
+ ["___ her sister a doctor?","Is",["Are","Am","Do","Does","Don't"]],
+ ["Tom and Anna ___ like fish.","don't",["doesn't","isn't","aren't","do","does"]],
+ ["The boy ___ his homework every day.","does",["do","doing","is","are","don't"]],
+ ["___ your teacher speak English?","Does",["Do","Is","Are","Am","Don't"]],
+ ["My sister and I ___ students.","are",["is","am","do","does","be"]]
+];
+extra.forEach((x,i)=>add(x[0],x[1],x[2],
+ i%3===0?"affirmative":i%3===1?"negative":"question"));
+
+function makeQueue(){
+ const groups={affirmative:[],negative:[],question:[]};
+ bank.forEach(x=>groups[x.type].push(x));
+ // Keep the three sentence forms mixed.
+ let result=[];
+ const max=$("difficulty").value==="hard"?50:30;
+ for(const type of Object.keys(groups)){
+  const selected=shuffle(groups[type]).slice(0,max);
+  result.push(...selected);
+ }
+ return shuffle(result);
+}
+
+function buildField(){
+ field.innerHTML="";
+ holes.length=0;
+ for(let i=0;i<6;i++){
+  const hole=document.createElement("div");
+  hole.className="hole";
+  hole.innerHTML=
+   '<div class="pit"></div>'+
+   '<div class="mole">'+
+   '<div class="ears">🐾</div>'+
+   '<div class="face">🐹</div>'+
+   '<div class="board"></div></div>';
+  const mole=hole.querySelector(".mole");
+  mole.addEventListener("click",()=>hit(i));
+  field.appendChild(hole);
+  holes.push(mole);
+ }
+}
+buildField();
+
+function getAudio(){
+ if(!audio){
+  const C=window.AudioContext||window.webkitAudioContext;
+  if(C)audio=new C();
+ }
+ if(audio&&audio.state==="suspended")audio.resume();
+ return audio;
+}
+function tone(freq,duration=.12,type="sine",volume=.06,delay=0){
+ const ctx=getAudio();
+ if(!ctx)return;
+ const osc=ctx.createOscillator(),gain=ctx.createGain();
+ const t=ctx.currentTime+delay;
+ osc.type=type;osc.frequency.setValueAtTime(freq,t);
+ gain.gain.setValueAtTime(.0001,t);
+ gain.gain.exponentialRampToValueAtTime(Math.max(.001,volume),t+.015);
+ gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
+ osc.connect(gain);gain.connect(ctx.destination);
+ osc.start(t);osc.stop(t+duration+.02);
+}
+function sfx(kind){
+ if(!soundOn)return;
+ if(kind==="pop"){
+  tone(520,.09,"triangle",.12);
+  tone(740,.11,"sine",.08,.06);
+ }
+ if(kind==="correct"){
+  tone(523,.13,"sine",.09);
+  tone(659,.13,"sine",.09,.12);
+  tone(784,.22,"sine",.10,.24);
+ }
+ if(kind==="wrong"){
+  tone(260,.17,"sawtooth",.06);
+  tone(180,.25,"triangle",.07,.14);
+ }
+ if(kind==="miss")tone(200,.12,"triangle",.035);
+}
+const melody=[523,659,784,659,587,698,880,698,
+ 659,784,988,784,587,659,784,523];
+function startMusic(){
+ stopMusic();
+ if(!musicOn)return;
+ musicStep=0;
+ musicTimer=setInterval(()=>{
+  if(!running||!musicOn)return;
+  tone(melody[musicStep%melody.length],.14,"triangle",.018);
+  if(musicStep%4===0)tone(130,.13,"sine",.014);
+  musicStep++;
+ },210);
+}
+function stopMusic(){
+ if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+}
+$("musicBtn").onclick=()=>{
+ musicOn=!musicOn;
+ $("musicBtn").textContent=musicOn?"🎵 Music ON":"🔇 Music OFF";
+ if(running&&musicOn)startMusic();else stopMusic();
+};
+$("soundBtn").onclick=()=>{
+ soundOn=!soundOn;
+ $("soundBtn").textContent=soundOn?"🔊 Sound ON":"🔕 Sound OFF";
+};
+
+function updateDisplay(){
+ $("score").textContent=score;
+ $("correct").textContent=correct;
+ $("wrong").textContent=wrong;
+ const secs=Math.max(0,Math.ceil(remaining));
+ $("totalTime").textContent=
+  String(Math.floor(secs/60)).padStart(2,"0")+":"+
+  String(secs%60).padStart(2,"0");
+ $("questionTime").textContent=Math.max(0,questionRemaining).toFixed(1);
+ const max=durations[$("difficulty").value];
+ const percent=Math.max(0,questionRemaining/max*100);
+ $("progress").style.width=percent+"%";
+ $("progress").style.background=percent<25?"#f04444":
+  percent<50?"#ffb52e":"#49bc75";
+}
+function hideMoles(){
+ holes.forEach(m=>m.classList.remove("up","hit"));
+}
+function nextQuestion(){
+ if(!running)return;
+ if(queue.length===0)queue=makeQueue();
+ question=queue.shift();
+ questionRemaining=durations[$("difficulty").value];
+ transitioning=false;
+ $("question").textContent=question.q;
+ $("message").textContent="🔨 Hit the correct mole!";
+ const opts=shuffle(question.options);
+ holes.forEach((m,i)=>{
+  m.querySelector(".board").textContent=opts[i];
+  m.dataset.answer=opts[i];
+  m.classList.remove("hit");
+ });
+ // Force reflow so rise animation plays.
+ hideMoles();
+ void field.offsetHeight;
+ holes.forEach(m=>m.classList.add("up"));
+ updateDisplay();
+}
+function advance(message){
+ transitioning=true;
+ $("message").textContent=message;
+ hideMoles();
+ setTimeout(()=>{
+  if(running)nextQuestion();
+ },600);
+}
+function hit(index){
+ if(!running||transitioning||!question)return;
+ const mole=holes[index];
+ if(!mole.classList.contains("up"))return;
+ const answer=mole.dataset.answer;
+ mole.classList.add("hit");
+ sfx("pop");
+ if(answer===question.a){
+  score+=10;correct++;
+  sfx("correct");
+  advance("✅ Correct! +10 points");
+ }else{
+  score=Math.max(0,score-5);wrong++;
+  sfx("wrong");
+  advance("❌ Correct answer: "+question.a);
+ }
+ updateDisplay();
+}
+function timeoutQuestion(){
+ if(transitioning)return;
+ wrong++;
+ sfx("miss");
+ advance("⏰ Time's up! Answer: "+question.a);
+ updateDisplay();
+}
+function tick(){
+ if(!running)return;
+ const now=performance.now();
+ const delta=Math.min((now-lastTick)/1000,.3);
+ lastTick=now;
+ remaining-=delta;
+ if(!transitioning)questionRemaining-=delta;
+ if(remaining<=0){
+  finish();return;
+ }
+ if(questionRemaining<=0&&!transitioning)timeoutQuestion();
+ updateDisplay();
+}
+function finish(){
+ running=false;transitioning=true;
+ clearInterval(timer);timer=null;
+ stopMusic();hideMoles();
+ remaining=0;updateDisplay();
+ $("question").textContent="🏆 TIME'S UP!";
+ $("message").textContent=
+  "Final score: "+score+" | Correct: "+correct+
+  " | Wrong/Missed: "+wrong;
+ $("startBtn").textContent="🔄 PLAY AGAIN";
+ $("difficulty").disabled=false;
+}
+function startGame(){
+ if(timer){clearInterval(timer);timer=null;}
+ stopMusic();
+ getAudio();
+ running=true;transitioning=false;
+ score=0;correct=0;wrong=0;remaining=300;
+ queue=makeQueue();
+ $("difficulty").disabled=true;
+ $("startBtn").textContent="🔄 RESTART";
+ nextQuestion();
+ lastTick=performance.now();
+ timer=setInterval(tick,50);
+ startMusic();
+}
+$("startBtn").addEventListener("click",startGame);
+$("difficulty").addEventListener("change",()=>{
+ if(!running){
+  questionRemaining=durations[$("difficulty").value];
+  updateDisplay();
+ }
+});
+updateDisplay();
+</script>
+</body>
+</html>
